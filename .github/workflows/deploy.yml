@@ -1,0 +1,49 @@
+name: Deploy EC2 stack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "templates/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      instance_type:
+        description: EC2 instance type
+        default: t2.micro
+        type: choice
+        options: [t2.micro, t2.small, t2.medium, t3.micro, t3.small, t3.medium]
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: ec2-lab-stack
+  TEMPLATE: templates/ec2-instance.yaml
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validate template
+        run: aws cloudformation validate-template --template-body file://${{ env.TEMPLATE }}
+
+      - name: Deploy stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file "$TEMPLATE" \
+            --parameter-overrides InstanceType="${{ inputs.instance_type || 't2.micro' }}" \
+            --no-fail-on-empty-changeset
+
+      - name: Show outputs
+        run: |
+          aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs" --output table | tee -a "$GITHUB_STEP_SUMMARY"
